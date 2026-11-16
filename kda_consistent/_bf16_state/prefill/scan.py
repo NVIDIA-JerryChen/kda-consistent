@@ -128,6 +128,7 @@ def _scan_kernel(
     prefix: cute.Tensor,
     ranks: cute.Tensor,
     order: cute.Tensor,
+    state_indices: cute.Tensor,
     window_start: cutlass.Int32,
     window_count: cutlass.Int32,
     runtime_rows: cutlass.Int32,
@@ -205,6 +206,8 @@ def _scan_kernel(
     )
     batch_idx = record[0]
     bh = batch_idx * HV + value_head_idx
+    if cutlass.const_expr(state_indices is not None):
+        bh = cutlass.Int64(state_indices[batch_idx]) * HV + bh % HV
     cta_v_offset = row_block * value_rows
     seq_start = record[1]
     length = record[2]
@@ -386,6 +389,7 @@ def _launch_scan(
     prefix: cute.Tensor,
     ranks: cute.Tensor,
     order: cute.Tensor,
+    state_indices: cute.Tensor,
     start: cutlass.Int32,
     count: cutlass.Int32,
     runtime_rows: cutlass.Int32,
@@ -409,6 +413,7 @@ def _launch_scan(
         prefix,
         ranks,
         order,
+        state_indices,
         start,
         count,
         runtime_rows,
@@ -424,7 +429,7 @@ def _launch_scan(
     ).launch(
         grid=[
             long_pairs * 8
-            + (state_out.shape[0] * v.shape[2] - long_pairs)
+            + ((cu_seqlens.shape[0] - 1) * v.shape[2] - long_pairs)
             * (128 // (CONSUMER_WARPS * 2 * runtime_rows)),
             1,
             1,
@@ -443,7 +448,7 @@ def _fake(shape, dtype=cute.BFloat16):
 
 
 @functools.cache
-def compiled_scan_kernel(device_index, capability):
+def compiled_scan_kernel(device_index, capability, indexed=False):
     radix4, trigger, lean = False, True, True
     b, length, h, n, m, r, o = (cute.sym_int() for _ in range(7))
     x = _fake((1, length, h, 128))
@@ -459,6 +464,7 @@ def compiled_scan_kernel(device_index, capability):
         _fake((m,), cute.Int32),
         _fake((r,), cute.Int32),
         _fake((o,), cute.Int32),
+        _fake((cute.sym_int(),), cute.Int32) if indexed else None,
         cutlass.Int32(0),
         cutlass.Int32(0),
         cutlass.Int32(4),

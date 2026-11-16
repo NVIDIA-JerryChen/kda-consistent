@@ -14,9 +14,11 @@
 | beta | 对应前三维 | `[B,Q,H]` | BF16 |
 | A_log / dt_bias | `[H]` / `[H,128]` | 同左 | FP32 |
 | state_in | `[N,H,128,128]`，dense N=B | `[B,H,128,128]` | state_dtype |
-| state_out | 必填，同 state_in | Q1 必填；Q8 必须 None | state_dtype |
+| state_out | 必填，同 state_in | Q1 必填；Q8 启用 commit 时必填，否则 None | state_dtype |
 | checkpoint_states | 不支持 | Q1 不支持；Q8 必填 `[B,8,H,128,128]` | state_dtype |
 | cu_seqlens | packed Int32 `[N+1]`，dense 省略 | 不使用 | CUDA Int32 |
+| state_indices | 可选 `[N]` | 可选 `[B]` | CUDA Int32 |
+| num_accepted_tokens | 不支持 | Q8 可选 `[B]`，值为 0～8 | CUDA Int32 |
 
 Q/K 在内部 L2 归一化；g 和 beta 为激活前值。默认 `scale=128**-0.5`、`eps=1e-6`、
 `lower_bound=-5.0`；eps 在 FP32 中须大于零，lower_bound 范围 `[-5,0]`，所有标量须为有限 FP32。
@@ -32,15 +34,37 @@ metadata 内容由调用方保证，API 不读取到 host 检查。历史 KV 已
 
 `run()` 返回 `(out,state_out)`。Q8 的第二项为 `checkpoint_states[:, -1]`，通常不连续。
 再次作为入口前使用 `.contiguous()` 或复制到连续 buffer。
-接受 a 个 token 时：a=0 使用原入口状态；否则选择 checkpoint 的 a−1 行。
-选择、压紧和框架状态管理由调用方负责；对应端到端测试须计入其成本。
-Q1/prefill 允许 state_in 与 state_out 精确原地重合；其他重叠禁止。
-Q8 checkpoint 与入口状态必须独立，保留接受零个 token 的状态。
+提供 `state_indices` 时，state_in/state_out 改为同容量 `[P,H,128,128]` 状态池，`N≤P<2³¹`（decode 的 N=B）。
+请求 i 直接读写 `state_indices[i]`，无需随 batch 重排搬运状态；输出与 checkpoint 仍按请求顺序排列。
+slot 必须在 `[0,P)` 内，同次调用的 slot 必须唯一。未被索引的 slot 保持不变。
+Q1/prefill 允许输入和输出状态池完全相同；禁止部分重叠及其他 buffer 别名。
+
+Q8 始终生成全部八个 checkpoint。默认 `state_out=None`；启用提交时，同时传入
+`state_out` 和 `num_accepted_tokens`。`run()` 不修改状态池；接受数在设备端准备好后，
+调用 `plan.commit()`：接受 0 个时保留/复制原始状态，否则复制第 a−1 个 checkpoint。
+`commit()` 返回目标池，也可通过 `plan.accepted_state` 访问。
+
+```python
+plan = prepare_decode(
+    q, k, v, g, beta, A_log, dt_bias, state_pool, out, state_pool,
+    state_dtype=torch.float32, checkpoint_states=checkpoints,
+    state_indices=slots, num_accepted_tokens=accepted,
+)
+plan.run()
+# Fill accepted on the same CUDA stream, then commit the accepted prefix.
+plan.commit()
+```
+
+checkpoint 与状态池必须独立。run 到 commit 之间不能改变 slot 映射、原始状态或 checkpoint；
+允许在此期间更新接受数。原地提交后，再次 run 从已提交状态继续；
+非原地提交须将目标池作为后续 plan 的入口。
+写入某个 slot 时，不得与其他调用对该 slot 的读取或写入并发；
+跨 stream 依赖由调用方用 event 等方式同步。
 
 ## 生命周期、Graph 与编译
 
 prepare 在 CUDA Graph capture 外校验、编译并绑定固定容量/地址，分配有上限的 workspace。
-run 不分配设备内存、不编译、不 D2H，向绑定 device 的 current stream 提交。
+run/commit 不分配设备内存、不编译、不 D2H，向绑定 device 的 current stream 提交。
 输入、标量和所有 buffers/plan 在 GPU 完成前须存活；plan 的输入内容及合法设备 metadata
 可以更新，改变地址/shape/标量需重新 prepare。跨 stream 依赖由调用方同步。
 同一 plan/workspace/output 不得并发复用。Graph replay 原地写状态时会推进状态。

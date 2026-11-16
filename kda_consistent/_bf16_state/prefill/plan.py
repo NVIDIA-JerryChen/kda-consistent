@@ -6,14 +6,7 @@ import torch
 from .coefficients import compiled_coeff_kernel
 from .scan import compiled_scan_kernel
 from .schedule import SEGMENT, MAX_REQUESTS, compiled_schedule
-from .policy import (
-    _rows,
-    _long_ranks,
-    _mixed_ranks,
-    _fill_ranks,
-    _plan_windows,
-    PROPORTIONAL_REQUESTS,
-)
+from .policy import _placement, _plan_windows
 
 
 @dataclass(frozen=True)
@@ -45,13 +38,14 @@ def prepare(
     state_out,
     workspace_limit_bytes=256 * 1024 * 1024,
     *,
+    state_indices=None,
     scale=128**-0.5,
     eps=1e-6,
     lower_bound=-5.0,
 ):
     """Prepare on the tensor's device; the public API validates the buffers."""
     _, total, h, _ = q.shape
-    n = state_in.shape[0]
+    n = cu_seqlens.numel() - 1
     if n > MAX_REQUESTS:
         raise ValueError(f"prefill supports at most {MAX_REQUESTS} requests")
     if n == 0:
@@ -76,25 +70,12 @@ def prepare(
     capability = torch.cuda.get_device_capability(q.device)
     device = q.device.index
     coeff = compiled_coeff_kernel(device, capability)
-    scan = compiled_scan_kernel(device, capability)
+    scan = compiled_scan_kernel(device, capability, state_indices is not None)
     schedule = compiled_schedule(device, capability)
 
-    long_ranks = _long_ranks(n, h, sms)
-    if long_ranks == 0:
-        long_ranks = _mixed_ranks(n, h, sms)
-    if long_ranks == 0 and _rows(n, h, sms) == 4:
-        long_ranks = _fill_ranks(n, h, sms)
-    rows = 4 if long_ranks else _rows(n, h, sms)
-    long_pairs = long_ranks * h
-    ctas = long_pairs * 8 + (n * h - long_pairs) * (8 if rows == 2 else 4)
-    tail = long_pairs == 0 and rows == 4 and n >= 8 and h * (4 * n + 4) <= 3 * sms
-    if tail:
-        long_pairs = h
-        ctas = h * (4 * n + 4)
-    radix4 = 3 if ctas <= 2 * sms else (2 if rows == 4 else 4)
-    if tail:
-        radix4 |= 16
-    radix4 |= 64
+    rows, long_pairs = _placement(n, h, sms)
+    ctas = long_pairs * 8 + (n * h - long_pairs) * (16 // rows)
+    radix4 = (3 if ctas <= 2 * sms else (2 if rows == 4 else 4)) | 64
 
     calls = [
         (
@@ -105,7 +86,7 @@ def prepare(
                 ranks,
                 tasks,
                 order,
-                1 if n <= PROPORTIONAL_REQUESTS else 0,
+                1,  # Length-proportional ordering for every batch.
             ),
         )
     ]
@@ -151,6 +132,7 @@ def prepare(
                     prefix,
                     ranks,
                     order,
+                    state_indices,
                     start,
                     count,
                     rows,

@@ -4,47 +4,39 @@ import functools
 from .schedule import SEGMENT
 
 
-def _rows(n, h, sms):
-    """Rows per lane from host shapes only (no device metadata)."""
-    pairs = n * h
-    cohorts = (pairs * 8 + sms - 1) // sms
-    # Few request-head pairs: eight CTAs per pair spread the recurrence over
-    # more SMs. Otherwise group CTAs into occupancy cohorts.
-    if pairs * 32 <= sms * 7:
-        return 2
-    return 2 if cohorts in (1, 3) else 4
+# (latency floor, fixed cost, per request-head/SM cost), microseconds/token.
+# Fit on independent varlen shapes N=1/3/5/7/11/17/29/31,
+# H=7/11/13/19/23/29/17/37, lengths 1408..1536. These are global
+# engine costs; no benchmark N/H/L value selects a production branch.
+_ENGINE_COST = {
+    2: (0.109, 0.000, 0.570),
+    4: (0.137, 0.028, 0.433),
+    8: (0.240, 0.102, 0.375),
+}
 
 
-def _long_ranks(n, h, sms):
-    """Leading (longest) requests that get the two-row engine while every CTA
-    of the launch still fits one per SM; from host shapes only."""
-    return max(0, min(n, (sms // h - 4 * n) // 4))
+def _placement(n, h, sms, max_rows=4):
+    """Choose the lowest predicted latency using work normalized by SM count.
 
+    A latency floor handles underfilled grids; the linear term models steady
+    throughput. All choices share the same compiled scan and arithmetic.
+    """
+    # When a four-row grid leaves unused SM positions, split whole longest
+    # requests without increasing the number of one-CTA-per-SM waves.
+    base = 4 * n * h
+    for capacity in (sms, 2 * sms, 3 * sms):
+        if capacity - sms < base <= capacity < 2 * base:
+            split = max(0, min(n - 1, (capacity - base) // (4 * h)))
+            if split:
+                return 4, split * h
+    work = n * h / sms
 
-def _mixed_ranks(n, h, sms):
-    """Number of requests using two-row consumers within two SM waves."""
-    if 4 * n * h <= sms:
-        return 0
-    best = 0
-    for count in range(1, n):
-        if h * (8 * count + 4 * (n - count)) <= 2 * sms:
-            best = count
-    return best if best >= 2 else 0
+    def cost(rows):
+        floor, fixed, slope = _ENGINE_COST[rows]
+        return max(floor, fixed + slope * work)
 
-
-def _fill_ranks(n, h, sms):
-    """Fill the second wave with two-row consumers for the longest requests."""
-    wave = 3 * sms
-    ctas = 4 * n * h
-    if not wave < ctas <= 2 * wave:
-        return 0
-    # Splitting one request adds four CTAs per head. Bound that expansion
-    # to one third of an SM wave; larger quanta overfill already busy grids.
-    if 4 * h > sms // 3:
-        return 0
-    # Reserve spare capacity for at most two longest requests, without
-    # displacing the rest of the batch from the same resident waves.
-    return max(0, min(n - 1, (2 * wave - ctas) // (4 * h), 2))
+    rows = min((r for r in _ENGINE_COST if r <= max_rows), key=lambda r: (cost(r), -r))
+    return rows, 0
 
 
 def _window_cost(slots, segments, n):
@@ -56,32 +48,19 @@ def _window_cost(slots, segments, n):
     return cost
 
 
-SPLIT_TOKEN_HEADS = 110000
-
-
-SPLIT_MIN_TOKEN_HEADS = 60000
-
-
 @functools.lru_cache(maxsize=256)
 def _plan_windows(limit, capacity, n, total, heads, many_waves=False):
     """Partition the bounded workspace into ordered, nonoverlapping adjacent windows."""
-    bound = max(1, min(capacity, (total + 127 * n) // SEGMENT))
-    small = total * heads < SPLIT_TOKEN_HEADS
-    # Small grids stay one window, except grids beyond one resident wave of
-    # at least SPLIT_MIN_TOKEN_HEADS token-heads: there a one-round first
-    # window lets the rest's coefficients hide behind its scan.
-    split_small = many_waves and total * heads >= SPLIT_MIN_TOKEN_HEADS
-    if bound <= limit and small and not split_small:
+    bound = max(1, min(capacity, (total + (SEGMENT - 1) * n) // SEGMENT))
+    # Keep a fully resident scan in one window when its coefficients fit.
+    # Multi-wave scans can hide the next coefficient window behind the
+    # current recurrence; otherwise avoid extra state I/O and scan startup.
+    if bound <= limit and (not many_waves or bound <= 2 * n):
         return [(0, bound, 0, 1)]
     if limit < 2:
         return [(start, 1, 0, 1) for start in range(bound)]
     half = limit // 2
-    rounds = 2
-    if small:
-        # Small grids of many heads: a one-round first window, the rest's
-        # coefficients behind its scan.
-        rounds = 1
-    first = max(1, min(bound, rounds * n, half - half % n if half >= n else half))
+    first = max(1, min(bound, 2 * n, half - half % n if half >= n else half))
     rest = bound - first
     if many_waves and rest - (limit - first) > min(n, first):
         # Grids beyond one resident wave whose rest needs several windows of

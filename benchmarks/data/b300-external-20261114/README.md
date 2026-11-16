@@ -50,9 +50,9 @@ Including FlashInfer/FlashKDA does not imply they satisfy our segmentation contr
   `ad59d7aad83e541c7cac7b6daf5a8edf3a228f5e3760056d0307c7ca55dadc7f`.
   Q8 uses its separately measured native checkpoint extension. These snapshots
   predate production cleanup; historical measurements do not certify the current API.
-- FlashInfer: `c3af0c13328fd23b256c53b9b4f94d9e160d118c`.
-- FlashKDA: `d7e3b3a9f448500630fa60fb5200f4f9c9b1fc72`;
-  CUTLASS: `5c149f52a436782210263fb2f19b354443a61c6a`.
+- [FlashInfer](https://github.com/flashinfer-ai/flashinfer): [c3af0c13328fd23b256c53b9b4f94d9e160d118c](https://github.com/flashinfer-ai/flashinfer/commit/c3af0c13328fd23b256c53b9b4f94d9e160d118c).
+- [FlashKDA](https://github.com/MoonshotAI/FlashKDA): [d7e3b3a9f448500630fa60fb5200f4f9c9b1fc72](https://github.com/MoonshotAI/FlashKDA/commit/d7e3b3a9f448500630fa60fb5200f4f9c9b1fc72);
+  CUTLASS: [5c149f52a436782210263fb2f19b354443a61c6a](https://github.com/NVIDIA/cutlass/commit/5c149f52a436782210263fb2f19b354443a61c6a).
 - Q1/forward experiment manifest SHA256:
   `731a1ffbeca53899897e14967d03c99f75c09946346823cff1191656706d37db`.
 - Q8 experiment manifest SHA256:

@@ -10,8 +10,8 @@ FP32 source: frozen r22 candidate SHA256
 `ad59d7aad83e541c7cac7b6daf5a8edf3a228f5e3760056d0307c7ca55dadc7f`
 plus the Q8 checkpoint module SHA256
 `3c11c6c97cbec05e990762996c23c767fe0501e473d1aa8abac912bb3fc6ec8f`.
-This predates the FP32 cleanup commit. CF-BI source: Inferact/zero-mismatch-rl,
-`vllm/kimi-k3.1`, commit `5735778f43f7d94108d432706dc5b17765bf723a`,
+This predates the FP32 cleanup commit. CF-BI source: [Inferact/zero-mismatch-rl](https://github.com/Inferact/zero-mismatch-rl),
+`vllm/kimi-k3.1`, commit [5735778f43f7d94108d432706dc5b17765bf723a](https://github.com/Inferact/zero-mismatch-rl/commit/5735778f43f7d94108d432706dc5b17765bf723a),
 C16/v6 and C64/v5. The original CUDA kernels were unchanged.
 
 231 cases: Q1 21, Q8 21, chunk prefill 84, prefill 9, 192K training-forward 96,

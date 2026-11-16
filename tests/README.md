@@ -16,6 +16,8 @@ states and all Q8 checkpoints byte for byte; NaN/Inf fail.
   empty decode, input ownership and invalid contracts.
 - `test_prefill.py`: arbitrary varlen splits, empty requests, padding, in-place
   state and batch changes/reordering.
+- `test_state_pool.py`: direct pool reads/writes, dynamic slots, acceptance 0..8,
+  checkpoint commit, continuation, Graph replay, untouched slots and pool-capacity cache reuse.
 - `test_decode.py`: Q8 checkpoints, acceptance/continuation, batch reordering
   and bounded coefficient workspace.
 - `test_consistency.py`: every PD cut in a short sequence, gate extremes,

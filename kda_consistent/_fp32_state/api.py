@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 import torch
 
-from .._validation import _contract_scalars, _range
+from .._validation import _contract_scalars, _range, _pool_size
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,7 @@ def prepare_fp32_prefill(
     out,
     state_out,
     *,
+    state_indices=None,
     cu_seqlens=None,
     scale=128**-0.5,
     eps=1e-6,
@@ -84,7 +85,11 @@ def prepare_fp32_prefill(
         raise ValueError("prefill supports at most 1023 requests")
     if total + 127 >= 2**31 or n * h * 8 >= 2**31 or (total + 127) // 128 + n >= 2**31:
         raise ValueError("token capacity, schedule capacity and grid must fit Int32")
+    pool_size = _pool_size(state_in, state_indices, n, h, q.device)
+    if state_indices is not None:
+        tensors["state_indices"] = state_indices
     shapes = dict(
+        state_indices=state_indices.shape if state_indices is not None else (0,),
         q=q.shape,
         k=q.shape,
         v=q.shape,
@@ -93,15 +98,15 @@ def prepare_fp32_prefill(
         beta=(b, length, h),
         A_log=(h,),
         dt_bias=(h, 128),
-        state_in=(n, h, 128, 128),
-        state_out=(n, h, 128, 128),
+        state_in=(pool_size, h, 128, 128),
+        state_out=(pool_size, h, 128, 128),
         cu_seqlens=(n + 1,),
     )
     requires_grad = False
     for name, tensor in tensors.items():
         dtype = (
             torch.int32
-            if name == "cu_seqlens"
+            if name in ("cu_seqlens", "state_indices")
             else (
                 torch.float32
                 if name in ("A_log", "dt_bias", "state_in", "state_out")
@@ -156,6 +161,7 @@ def prepare_fp32_prefill(
             out.view(1, total, h, 128),
             state_out,
             workspace_limit_bytes - cu_bytes,
+            state_indices=state_indices,
             scale=scale,
             eps=eps,
             lower_bound=lower_bound,
@@ -203,6 +209,7 @@ def prepare_fp32_decode(
     out,
     state_out=None,
     *,
+    state_indices=None,
     checkpoint_states=None,
     scale=128**-0.5,
     eps=1e-6,
@@ -241,7 +248,11 @@ def prepare_fp32_decode(
         if not isinstance(checkpoint_states, torch.Tensor) or state_out is not None:
             raise ValueError("Q8 requires checkpoint_states and state_out=None")
         tensors["checkpoint_states"] = checkpoint_states
+    pool_size = _pool_size(state_in, state_indices, b, h, q.device)
+    if state_indices is not None:
+        tensors["state_indices"] = state_indices
     shapes = dict(
+        state_indices=state_indices.shape if state_indices is not None else (0,),
         q=q.shape,
         k=q.shape,
         v=q.shape,
@@ -250,14 +261,16 @@ def prepare_fp32_decode(
         beta=(b, length, h),
         A_log=(h,),
         dt_bias=(h, 128),
-        state_in=(b, h, 128, 128),
-        state_out=(b, h, 128, 128),
+        state_in=(pool_size, h, 128, 128),
+        state_out=(pool_size, h, 128, 128),
         checkpoint_states=(b, 8, h, 128, 128),
     )
     requires_grad = False
     for name, tensor in tensors.items():
         dtype = (
-            torch.float32
+            torch.int32
+            if name == "state_indices"
+            else torch.float32
             if name
             in ("A_log", "dt_bias", "state_in", "state_out", "checkpoint_states")
             else torch.bfloat16
@@ -300,11 +313,15 @@ def prepare_fp32_decode(
             if length == 1:
                 from .decode_q1 import compiled_decode_kernel
 
-                kernel = compiled_decode_kernel(q.device.index, capability)
+                kernel = compiled_decode_kernel(
+                    q.device.index, capability, state_indices is not None
+                )
             else:
                 from .decode_q8 import compiled_q8_kernel
 
-                kernel = compiled_q8_kernel(q.device.index, capability)
+                kernel = compiled_q8_kernel(
+                    q.device.index, capability, state_indices is not None
+                )
         packed = tuple(t.view(1, b * length, *t.shape[2:]) for t in (q, k, v, g, beta))
         arguments = (
             *packed,
@@ -316,6 +333,7 @@ def prepare_fp32_decode(
             float(scale),
             float(eps),
             float(lower_bound),
+            state_indices,
         )
     return FP32DecodePlan(
         kernel, arguments, out, terminal, checkpoint_states, requires_grad

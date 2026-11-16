@@ -5,6 +5,10 @@
 - 比较全部有效输出、完整续算状态和每 token checkpoint，NaN/Inf 失败。内部一致性不能代替独立 FP64 数学诊断。
 - gate、归一化、投影、归约、delta、状态乘加保持 FP32；不得引入 BF16 中间计算或投影舍入。状态存储按选定契约为 BF16 或 FP32。
 - Prefill 使用统一入口，B/H/token 数/varlen metadata 保持 runtime，不按长度或 B×H 分档编译。
+- Prefill 调度不得使用固定 H 数值的经验门槛（如 `H > 12`）；按 CTA 工作量、SM 容量及 workspace 推导调度，不为 benchmark shape 设置专用分支。
+- 状态池索引及接受数保持设备端 runtime metadata；不得为分派或校验内容引入 D2H。slot 写入须唯一，原地更新只允许完整输入/输出池别名。
+- Q8 始终保留全部 checkpoint；commit 按 0～8 接受数提交，0 保留原始状态。验收比较所选完整状态及后续续算，benchmark 计入选择与写回。
+- 通用调度成本模型须有跨形状测量依据；不针对 benchmark case ID、固定 H/N/L 值设特判。模型/窗口调整仍须验证同一编译实例及数值程序不变。
 - Decode 可按 Q 和确实影响代码生成的有限配置编译，不按精确 batch、历史 KV 长度、指针或设备 metadata 内容特化；构造 key 不得 D2H。
 - 只负责 no_grad forward，不包含 backward、完整模型 logits 或框架通信。
 - 保留许可证与 attribution；修改后的正确性与性能须由对应版本的验证证据支持。

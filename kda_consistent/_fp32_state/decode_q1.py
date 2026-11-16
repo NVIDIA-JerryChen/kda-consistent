@@ -39,6 +39,7 @@ def _decode_kernel(
     scale: cutlass.Float32,
     eps: cutlass.Float32,
     lower_bound: cutlass.Float32,
+    state_indices: cute.Tensor,
 ):
     """One warp owns a [16 V, 128 K] tile in registers.
 
@@ -65,7 +66,10 @@ def _decode_kernel(
     # Dense contiguous buffers share one linear batch-head index. Use 64-bit
     # offsets so a large state allocation cannot overflow an Int32 product.
     token_offset = cutlass.Int64(bh) * 128
-    state_offset = cutlass.Int64(bh) * 128 * 128
+    state_bh = cutlass.Int64(bh)
+    if cutlass.const_expr(state_indices is not None):
+        state_bh = cutlass.Int64(state_indices[bh // n_heads]) * n_heads + bh % n_heads
+    state_offset = state_bh * 128 * 128
     state_layout = cute.make_layout((128, 128), stride=(128, 1))
     head_layout = cute.make_layout((128,), stride=(1,))
     h_read = cute.make_tensor(
@@ -260,6 +264,7 @@ def _launch(
     scale: cutlass.Float32,
     eps: cutlass.Float32,
     lower_bound: cutlass.Float32,
+    state_indices: cute.Tensor,
     stream: cuda.CUstream,
 ):
     _decode_kernel(
@@ -276,6 +281,7 @@ def _launch(
         scale,
         eps,
         lower_bound,
+        state_indices,
     ).launch(
         grid=[q.shape[1] * q.shape[2] * (8 // WARPS), 1, 1],
         block=[32 * WARPS, 1, 1],
@@ -284,7 +290,7 @@ def _launch(
 
 
 @functools.cache
-def compiled_decode_kernel(device_index, capability):
+def compiled_decode_kernel(device_index, capability, indexed=False):
     import torch
 
     if torch.cuda.is_current_stream_capturing():
@@ -301,7 +307,7 @@ def compiled_decode_kernel(device_index, capability):
 
     # Packed Q1 layout as passed by the API: [1, T=B, H, D], no host reshapes.
     x = fake((1, b, h, 128))
-    state = fake((b, h, 128, 128), cute.Float32)
+    state = fake((cute.sym_int() if indexed else b, h, 128, 128), cute.Float32)
     return cute.compile(
         _launch,
         x,
@@ -317,6 +323,7 @@ def compiled_decode_kernel(device_index, capability):
         cutlass.Float32(0.0),
         cutlass.Float32(0.0),
         cutlass.Float32(0.0),
+        fake((b,), cute.Int32) if indexed else None,
         cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True),
         options="--enable-tvm-ffi --generate-line-info",
     )

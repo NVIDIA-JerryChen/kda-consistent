@@ -142,6 +142,7 @@ def _scan_kernel(
     V_TILE: cutlass.Constexpr[int],
     checkpoints: cute.Tensor,
     checkpoint_indices: cute.Tensor,
+    state_indices: cute.Tensor,
     CHECKPOINTS: cutlass.Constexpr[bool],
     WRITE_FINAL: cutlass.Constexpr[bool],
 ):
@@ -166,7 +167,10 @@ def _scan_kernel(
     # offsets so a large state allocation cannot overflow an Int32 product.
     batch_idx = bh // HV
     length = cutlass.Int32(gV.shape[1])
-    state_offset = cutlass.Int64(bh) * 128 * 128
+    state_bh = cutlass.Int64(bh)
+    if cutlass.const_expr(state_indices is not None):
+        state_bh = cutlass.Int64(state_indices[batch_idx]) * HV + value_head_idx
+    state_offset = state_bh * 128 * 128
     state_layout = cute.make_layout((128, 128), stride=(128, 1))
     h_read = cute.make_tensor(
         (gInitialStateSource.iterator + state_offset).align(32), state_layout
@@ -325,6 +329,7 @@ def _launch_scan_checkpoints(
     out: cute.Tensor,
     checkpoints: cute.Tensor,
     checkpoint_indices: cute.Tensor,
+    state_indices: cute.Tensor,
     start: cutlass.Int32,
     count: cutlass.Int32,
     V_TILE: cutlass.Constexpr[int],
@@ -342,6 +347,7 @@ def _launch_scan_checkpoints(
         V_TILE,
         checkpoints,
         checkpoint_indices,
+        state_indices,
         True,
         WRITE_FINAL,
     ).launch(
@@ -352,10 +358,10 @@ def _launch_scan_checkpoints(
 
 
 @functools.cache
-def compiled_scan_checkpoints(device_index, capability, v_tile, write_final):
+def compiled_scan_checkpoints(device_index, capability, v_tile, write_final, indexed=False):
     b, length, h, n = (cute.sym_int() for _ in range(4))
     x = _fake((b, length, h, 128))
-    state = _fake((b, h, 128, 128))
+    state = _fake((cute.sym_int() if indexed else b, h, 128, 128))
     return cute.compile(
         _launch_scan_checkpoints,
         x,
@@ -365,6 +371,7 @@ def compiled_scan_checkpoints(device_index, capability, v_tile, write_final):
         x,
         _fake((cute.sym_int(), h, 128, 128)),
         _fake((b, length), cute.Int32),
+        _fake((b,), cute.Int32) if indexed else None,
         cutlass.Int32(0),
         cutlass.Int32(0),
         v_tile,

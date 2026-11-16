@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field, replace
 import torch
-from .._validation import _contract_scalars, _range
+from .._validation import _contract_scalars, _range, _pool_size
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,7 @@ def prepare_consistent_decode(
     out,
     state_out,
     *,
+    state_indices=None,
     scale=128**-0.5,
     eps=1e-6,
     lower_bound=-5.0,
@@ -74,7 +75,11 @@ def prepare_consistent_decode(
     b, _, h, _ = q.shape
     if b * h * 8 >= 2**31:
         raise ValueError("decode requires B * H * 8 < 2**31")
+    pool_size = _pool_size(state_in, state_indices, b, h, q.device)
+    if state_indices is not None:
+        tensors["state_indices"] = state_indices
     shapes = dict(
+        state_indices=state_indices.shape if state_indices is not None else (0,),
         q=q.shape,
         k=q.shape,
         v=q.shape,
@@ -83,11 +88,17 @@ def prepare_consistent_decode(
         beta=(b, 1, h),
         A_log=(h,),
         dt_bias=(h, 128),
-        state_in=(b, h, 128, 128),
-        state_out=(b, h, 128, 128),
+        state_in=(pool_size, h, 128, 128),
+        state_out=(pool_size, h, 128, 128),
     )
     for name, t in tensors.items():
-        dtype = torch.float32 if name in ("A_log", "dt_bias") else torch.bfloat16
+        dtype = (
+            torch.int32
+            if name == "state_indices"
+            else torch.float32
+            if name in ("A_log", "dt_bias")
+            else torch.bfloat16
+        )
         if t.device.type != "cuda" or t.device != q.device:
             raise ValueError(f"{name} must be on the same CUDA device as q")
         if t.dtype != dtype or tuple(t.shape) != tuple(shapes[name]):
@@ -117,7 +128,9 @@ def prepare_consistent_decode(
 
     with torch.cuda.device(q.device):
         kernel = compiled_decode_kernel(
-            q.device.index, torch.cuda.get_device_capability(q.device)
+            q.device.index,
+            torch.cuda.get_device_capability(q.device),
+            state_indices is not None,
         )
         arguments = (
             q,
@@ -133,6 +146,7 @@ def prepare_consistent_decode(
             float(scale),
             float(eps),
             float(lower_bound),
+            state_indices,
         )
     return ConsistentDecodePlan(
         kernel,
@@ -175,6 +189,7 @@ def prepare_unified_prefill(
     out,
     state_out,
     *,
+    state_indices=None,
     cu_seqlens=None,
     scale=128**-0.5,
     eps=1e-6,
@@ -218,7 +233,11 @@ def prepare_unified_prefill(
         n = cu_seqlens.numel() - 1
     if total + 127 >= 2**31 or n * h * 8 >= 2**31 or (total + 127) // 128 + n >= 2**31:
         raise ValueError("token capacity, schedule capacity and grid must fit Int32")
+    pool_size = _pool_size(state_in, state_indices, n, h, q.device)
+    if state_indices is not None:
+        tensors["state_indices"] = state_indices
     shapes = dict(
+        state_indices=state_indices.shape if state_indices is not None else (0,),
         q=q.shape,
         k=q.shape,
         v=q.shape,
@@ -227,15 +246,15 @@ def prepare_unified_prefill(
         beta=(b, length, h),
         A_log=(h,),
         dt_bias=(h, 128),
-        state_in=(n, h, 128, 128),
-        state_out=(n, h, 128, 128),
+        state_in=(pool_size, h, 128, 128),
+        state_out=(pool_size, h, 128, 128),
         cu_seqlens=(n + 1,),
     )
     requires_grad = False
     for name, tensor in tensors.items():
         dtype = (
             torch.int32
-            if name == "cu_seqlens"
+            if name in ("cu_seqlens", "state_indices")
             else (torch.float32 if name in ("A_log", "dt_bias") else torch.bfloat16)
         )
         if tensor.device.type != "cuda" or tensor.device != q.device:
@@ -284,6 +303,7 @@ def prepare_unified_prefill(
             out.view(1, total, h, 128),
             state_out,
             workspace_limit_bytes - cu_bytes,
+            state_indices=state_indices,
             scale=scale,
             eps=eps,
             lower_bound=lower_bound,
@@ -332,6 +352,7 @@ def prepare_checkpoint_decode(
     out,
     state_out,
     *,
+    state_indices=None,
     scale=128**-0.5,
     eps=1e-6,
     lower_bound=-5.0,
@@ -355,7 +376,9 @@ def prepare_checkpoint_decode(
         state_in=state_in,
         out=out,
     )
-    tensors.update(checkpoint_states=checkpoint_states, checkpoint_indices=checkpoint_indices)
+    tensors.update(
+        checkpoint_states=checkpoint_states, checkpoint_indices=checkpoint_indices
+    )
     if not all(isinstance(t, torch.Tensor) for t in tensors.values()):
         raise TypeError("all inputs and output buffers must be torch.Tensor")
     if q.ndim != 4 or q.shape[1] != 8 or q.shape[2] < 1 or q.shape[3] != 128:
@@ -363,7 +386,11 @@ def prepare_checkpoint_decode(
     b, length, h, _ = q.shape
     if b * h * 64 >= 2**31:
         raise ValueError("Q8 decode requires B * H * 64 < 2**31")
+    pool_size = _pool_size(state_in, state_indices, b, h, q.device)
+    if state_indices is not None:
+        tensors["state_indices"] = state_indices
     shapes = dict(
+        state_indices=state_indices.shape if state_indices is not None else (0,),
         q=q.shape,
         k=q.shape,
         v=q.shape,
@@ -372,7 +399,7 @@ def prepare_checkpoint_decode(
         beta=(b, length, h),
         A_log=(h,),
         dt_bias=(h, 128),
-        state_in=(b, h, 128, 128),
+        state_in=(pool_size, h, 128, 128),
     )
     if checkpoint_states.ndim != 4 or tuple(checkpoint_states.shape[1:]) != (
         h,
@@ -389,8 +416,10 @@ def prepare_checkpoint_decode(
     for name, t in tensors.items():
         dtype = (
             torch.int32
-            if name == "checkpoint_indices"
-            else torch.float32 if name in ("A_log", "dt_bias") else torch.bfloat16
+            if name in ("checkpoint_indices", "state_indices")
+            else torch.float32
+            if name in ("A_log", "dt_bias")
+            else torch.bfloat16
         )
         if t.device.type != "cuda" or t.device != q.device:
             raise ValueError(f"{name} must be on the same CUDA device as q")
@@ -422,13 +451,17 @@ def prepare_checkpoint_decode(
     calls = []
     used_workspace = 0
     final_buffer = state_in
-    tile = 2 if b * h <= 64 else 8
+    # Split V further only when the eight-row grid cannot fill the device.
+    sms = torch.cuda.get_device_properties(q.device).multi_processor_count
+    tile = 2 if b * h * (128 // 8) <= sms else 8
     with torch.cuda.device(q.device):
         device = q.device.index
         capability = torch.cuda.get_device_capability(q.device)
         from .decode_q8 import (
-            compiled_coeff_kernel, compiled_scan_checkpoints,
+            compiled_coeff_kernel,
+            compiled_scan_checkpoints,
         )
+
         row_bytes = b * h * 392 * 4
         workspace_budget = workspace_limit_bytes
         window = min(length, workspace_budget // row_bytes)
@@ -443,7 +476,9 @@ def prepare_checkpoint_decode(
         )
         used_workspace = workspace.numel() * workspace.element_size()
         coeff = compiled_coeff_kernel(device, capability)
-        scan = compiled_scan_checkpoints(device, capability, tile, False)
+        scan = compiled_scan_checkpoints(
+            device, capability, tile, False, state_indices is not None
+        )
         for start in range(0, length, window):
             count = min(window, length - start)
             calls.append(
@@ -472,7 +507,7 @@ def prepare_checkpoint_decode(
                 state_in,
                 out,
             )
-            scan_arguments += (checkpoint_states, checkpoint_indices)
+            scan_arguments += (checkpoint_states, checkpoint_indices, state_indices)
             calls.append((scan, scan_arguments + (start, count)))
     return CheckpointDecodePlan(
         tuple(calls),
@@ -486,13 +521,29 @@ def prepare_checkpoint_decode(
 
 
 def prepare_bf16_decode(
-    q, k, v, g, beta, A_log, dt_bias, state_in, out, state_out=None, *,
-    checkpoint_states=None, scale=128**-0.5, eps=1e-6, lower_bound=-5.0,
+    q,
+    k,
+    v,
+    g,
+    beta,
+    A_log,
+    dt_bias,
+    state_in,
+    out,
+    state_out=None,
+    *,
+    state_indices=None,
+    checkpoint_states=None,
+    scale=128**-0.5,
+    eps=1e-6,
+    lower_bound=-5.0,
     workspace_limit_bytes=64 * 1024**2,
 ):
     """Own Q8 index preparation and account for its complete workspace."""
     args = (q, k, v, g, beta, A_log, dt_bias, state_in, out)
-    options = dict(scale=scale, eps=eps, lower_bound=lower_bound)
+    options = dict(
+        scale=scale, eps=eps, lower_bound=lower_bound, state_indices=state_indices
+    )
     b, length, h, _ = q.shape
     if length == 1:
         return prepare_consistent_decode(*args, state_out, **options)
@@ -502,8 +553,11 @@ def prepare_bf16_decode(
     with torch.cuda.device(q.device):
         indices = torch.arange(b * 8, device=q.device, dtype=torch.int32).view(b, 8)
         backend = prepare_checkpoint_decode(
-            *args, None, checkpoint_states=checkpoint_states.view(b * 8, h, 128, 128),
+            *args,
+            None,
+            checkpoint_states=checkpoint_states.view(b * 8, h, 128, 128),
             checkpoint_indices=indices,
-            workspace_limit_bytes=workspace_limit_bytes - metadata_bytes, **options,
+            workspace_limit_bytes=workspace_limit_bytes - metadata_bytes,
+            **options,
         )
     return replace(backend, workspace_bytes=backend.workspace_bytes + metadata_bytes)

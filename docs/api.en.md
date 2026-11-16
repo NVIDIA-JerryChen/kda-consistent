@@ -14,9 +14,11 @@ conversion occurs. All tensors must be on the same CUDA device, contiguous, and
 | beta | matching first three axes | `[B,Q,H]` | BF16 |
 | A_log / dt_bias | `[H]` / `[H,128]` | same | FP32 |
 | state_in | `[N,H,128,128]`, dense N=B | `[B,H,128,128]` | state_dtype |
-| state_out | required, same as state_in | required for Q1; must be None for Q8 | state_dtype |
+| state_out | required, same as state_in | required for Q1; required for Q8 commit, otherwise None | state_dtype |
 | checkpoint_states | unsupported | forbidden for Q1; required `[B,8,H,128,128]` for Q8 | state_dtype |
 | cu_seqlens | packed Int32 `[N+1]`, omitted for dense | unused | CUDA Int32 |
+| state_indices | optional `[N]` | optional `[B]` | CUDA Int32 |
+| num_accepted_tokens | unsupported | optional Q8 `[B]`, values 0..8 | CUDA Int32 |
 
 Q/K are L2-normalized internally; g/beta are pre-activation values. Defaults:
 `scale=128**-0.5`, `eps=1e-6`, `lower_bound=-5.0`. Eps must be positive in FP32,
@@ -36,17 +38,41 @@ require their own correct entry states.
 
 `run()` returns `(out,state_out)`. For Q8 the second value is the usually noncontiguous
 view `checkpoint_states[:, -1]`. Use `.contiguous()` or copy it to a contiguous buffer
-before passing it to a subsequent call. Accepting a tokens selects the original
-entry state when a=0, otherwise checkpoint a−1. Selection, compaction and framework
-state management belong to the caller and must be timed when measuring that scope.
-Q1/prefill allow exact state_in/state_out in-place aliasing; other overlap is forbidden.
-Q8 checkpoints must be independent of the entry state to preserve acceptance of zero tokens.
+before passing it to a subsequent call. With `state_indices`, state_in/state_out are equal-capacity `[P,H,128,128]` pools, with `N≤P<2³¹` (N=B for decode).
+Request i reads and writes slot `state_indices[i]` directly, without moving state
+when requests reorder. Outputs/checkpoints remain in request order. Slots must
+be unique within a call and lie in `[0,P)`; unindexed slots remain untouched.
+Q1/prefill allow identical input/output pools. Partial overlap and other aliases
+are forbidden.
+
+Q8 always generates all eight checkpoints. By default `state_out=None`; to enable
+commit, supply both `state_out` and device `num_accepted_tokens`. `run()` leaves
+the state pool unchanged. After acceptance evaluation, call `plan.commit()` to
+copy checkpoint a−1, or preserve/copy the original state when a=0. It returns the
+destination pool, also available as `plan.accepted_state`.
+
+```python
+plan = prepare_decode(
+    q, k, v, g, beta, A_log, dt_bias, state_pool, out, state_pool,
+    state_dtype=torch.float32, checkpoint_states=checkpoints,
+    state_indices=slots, num_accepted_tokens=accepted,
+)
+plan.run()
+# Fill accepted on the same CUDA stream, then commit the accepted prefix.
+plan.commit()
+```
+
+Checkpoints must not alias the state pool. Between run and commit, keep slot
+identities, the original state and checkpoints unchanged; acceptance counts may
+be updated. After an in-place commit, the next run continues from the committed state;
+for an out-of-place commit, bind the destination pool as the next plan’s input. A write to a slot must not overlap another call’s read or write to that slot;
+synchronize cross-stream dependencies with events or equivalent mechanisms.
 
 ## Lifecycle, Graphs and compilation
 
 Prepare validates, compiles, binds fixed capacities/addresses, and allocates bounded
-workspace outside Graph capture. Run allocates no device memory, compiles nothing,
-performs no D2H, and uses the bound device's current stream. Keep the plan and all
+workspace outside Graph capture. Run/commit allocate no device memory, compile nothing,
+perform no D2H, and use the bound device's current stream. Keep the plan and all
 buffers alive until GPU completion. Update input contents and valid device metadata
 in place; recreate the plan for new addresses/shapes/scalars. The caller synchronizes
 cross-stream dependencies. Do not concurrently reuse a plan/workspace/output.

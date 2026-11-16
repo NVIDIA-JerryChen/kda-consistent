@@ -16,16 +16,18 @@ def main():
     a, bias = torch.zeros(h, device="cuda"), torch.zeros(h, 128, device="cuda")
 
     def inputs(shape):
-        return [torch.randn(shape, device="cuda", dtype=torch.bfloat16) for _ in range(4)] + [
-            torch.randn(shape[:-1], device="cuda", dtype=torch.bfloat16)
-        ]
+        return [
+            torch.randn(shape, device="cuda", dtype=torch.bfloat16) for _ in range(4)
+        ] + [torch.randn(shape[:-1], device="cuda", dtype=torch.bfloat16)]
 
     xs = inputs((1, 19, h, 128))
     initial = torch.zeros(2, h, 128, 128, device="cuda", dtype=dtype)
     state = torch.empty_like(initial)
     out = torch.empty_like(xs[0])
     cu = torch.tensor([0, 2, 19], device="cuda", dtype=torch.int32)
-    prepare_prefill(*xs, a, bias, initial, out, state, state_dtype=dtype, cu_seqlens=cu).run()
+    prepare_prefill(
+        *xs, a, bias, initial, out, state, state_dtype=dtype, cu_seqlens=cu
+    ).run()
 
     xs = inputs((2, 1, h, 128))
     next_state, out = torch.empty_like(state), torch.empty_like(xs[0])
@@ -33,16 +35,26 @@ def main():
 
     xs = inputs((2, 8, h, 128))
     checkpoints = torch.empty(2, 8, h, 128, 128, device="cuda", dtype=dtype)
-    plan = prepare_decode(*xs, a, bias, next_state, torch.empty_like(xs[0]),
-                          state_dtype=dtype, checkpoint_states=checkpoints)
+    accepted = torch.tensor([0, 4], device="cuda", dtype=torch.int32)
+    selected = torch.empty_like(next_state)
+    plan = prepare_decode(
+        *xs,
+        a,
+        bias,
+        next_state,
+        torch.empty_like(xs[0]),
+        selected,
+        state_dtype=dtype,
+        checkpoint_states=checkpoints,
+        num_accepted_tokens=accepted,
+    )
     out, terminal = plan.run()
-    # Two requests accept zero and four tokens. Selection is outside the kernel API.
-    accepted = torch.tensor([0, 4], device="cuda")
-    rows = torch.arange(2, device="cuda")
-    selected = torch.where((accepted > 0)[:, None, None, None],
-                           checkpoints[rows, (accepted - 1).clamp_min(0)], next_state).contiguous()
+    # Acceptance may be produced by another GPU operation before commit.
+    plan.commit()
     assert torch.isfinite(out).all() and torch.isfinite(selected).all()
-    print(f"{args.state_dtype}: prefill/Q1/Q8 complete; terminal={tuple(terminal.shape)}")
+    print(
+        f"{args.state_dtype}: prefill/Q1/Q8 complete; terminal={tuple(terminal.shape)}"
+    )
 
 
 if __name__ == "__main__":

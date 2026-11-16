@@ -11,7 +11,9 @@ def _validate_contract(q, state_in, state_dtype, workspace_limit_bytes):
     if not isinstance(q, torch.Tensor) or not isinstance(state_in, torch.Tensor):
         raise TypeError("q and state_in must be torch.Tensor")
     if state_in.dtype != state_dtype:
-        raise ValueError("state_in.dtype must equal state_dtype; no implicit conversion")
+        raise ValueError(
+            "state_in.dtype must equal state_dtype; no implicit conversion"
+        )
     if q.device.type != "cuda":
         raise ValueError("q must be a CUDA tensor")
     if not isinstance(workspace_limit_bytes, int) or workspace_limit_bytes < 0:
@@ -51,23 +53,61 @@ class DecodePlan:
     state_dtype: torch.dtype
     workspace_bytes: int
 
+    accepted_state: torch.Tensor | None = field(default=None, repr=False)
+    _commit_call: tuple | None = field(default=None, repr=False)
+
+    def commit(self):
+        """Submit Q8's accepted prefix using the bound device acceptance counts.
+
+        Call after run and acceptance evaluation on the same stream. Zero
+        preserves the original state. Slot/checkpoint identities must remain
+        unchanged between run and commit. Returns the destination state pool.
+        """
+        if self._commit_call is None:
+            raise RuntimeError(
+                "commit requires Q8 with num_accepted_tokens and state_out"
+            )
+        if self.accepted_state.requires_grad and torch.is_grad_enabled():
+            raise RuntimeError("commit supports forward without autograd only")
+        kernel, arguments = self._commit_call
+        with torch.cuda.device(self.out.device):
+            if kernel is not None:
+                kernel(*arguments)
+        return self.accepted_state
+
     def run(self):
-        """Enqueue the complete decode; Q8 returns a view of its final checkpoint."""
+        """Enqueue the complete decode; Q8 returns its last checkpoint; commit selects the accepted prefix."""
         with torch.cuda.device(self.out.device):
             self._backend.run()
         return self.out, self.state_out
 
 
 def prepare_prefill(
-    q, k, v, g, beta, A_log, dt_bias, state_in, out, state_out, *,
-    state_dtype, cu_seqlens=None, scale=128**-0.5, eps=1e-6,
-    lower_bound=-5.0, workspace_limit_bytes=256 * 1024**2,
+    q,
+    k,
+    v,
+    g,
+    beta,
+    A_log,
+    dt_bias,
+    state_in,
+    out,
+    state_out,
+    *,
+    state_dtype,
+    cu_seqlens=None,
+    state_indices=None,
+    scale=128**-0.5,
+    eps=1e-6,
+    lower_bound=-5.0,
+    workspace_limit_bytes=256 * 1024**2,
 ):
     """Prepare dense [B,L,H,128] or packed [1,T,H,128] no_grad forward.
 
     state_dtype is required and selects BF16 or FP32 continuation storage.
     Q/K/V/g/beta/output are BF16; A_log/dt_bias are FP32. Packed cu_seqlens
-    is device Int32 [N+1]. Input/output states are [N,H,128,128], V then K.
+    is device Int32 [N+1]. States are [N,H,128,128], V then K, or [P,H,128,128] pools
+    indexed by optional device Int32 state_indices [N].
     See docs/api.md for metadata, ownership, alignment and Graph constraints.
     """
     _validate_contract(q, state_in, state_dtype, workspace_limit_bytes)
@@ -76,23 +116,54 @@ def prepare_prefill(
     else:
         from ._bf16_state.api import prepare_unified_prefill as prepare
     backend = prepare(
-        q, k, v, g, beta, A_log, dt_bias, state_in, out, state_out,
-        cu_seqlens=cu_seqlens, scale=scale, eps=eps, lower_bound=lower_bound,
+        q,
+        k,
+        v,
+        g,
+        beta,
+        A_log,
+        dt_bias,
+        state_in,
+        out,
+        state_out,
+        cu_seqlens=cu_seqlens,
+        state_indices=state_indices,
+        scale=scale,
+        eps=eps,
+        lower_bound=lower_bound,
         workspace_limit_bytes=workspace_limit_bytes,
     )
     return PrefillPlan(backend, out, state_out, state_dtype, backend.workspace_bytes)
 
 
 def prepare_decode(
-    q, k, v, g, beta, A_log, dt_bias, state_in, out, state_out=None, *,
-    state_dtype, checkpoint_states=None, scale=128**-0.5, eps=1e-6,
-    lower_bound=-5.0, workspace_limit_bytes=64 * 1024**2,
+    q,
+    k,
+    v,
+    g,
+    beta,
+    A_log,
+    dt_bias,
+    state_in,
+    out,
+    state_out=None,
+    *,
+    state_dtype,
+    checkpoint_states=None,
+    state_indices=None,
+    num_accepted_tokens=None,
+    scale=128**-0.5,
+    eps=1e-6,
+    lower_bound=-5.0,
+    workspace_limit_bytes=64 * 1024**2,
 ):
     """Prepare dense [B,Q,H,128] decode, Q=1 or Q=8.
 
     Q1 requires state_out and forbids checkpoint_states. Q8 requires
-    checkpoint_states [B,8,H,128,128] and state_out=None; run returns the
-    checkpoint_states[:, -1] view. Accept/reject selection is caller-owned.
+    checkpoint_states [B,8,H,128,128]; run returns checkpoint_states[:, -1].
+    Optional state_indices maps requests to state pool slots. Q8 can bind
+    state_out and num_accepted_tokens for an explicit plan.commit() after
+    acceptance evaluation. Zero accepted tokens preserve the initial state.
     No input dtype conversion or device-to-host metadata read is performed.
     """
     _validate_contract(q, state_in, state_dtype, workspace_limit_bytes)
@@ -103,27 +174,124 @@ def prepare_decode(
         if not isinstance(state_out, torch.Tensor) or checkpoint_states is not None:
             raise ValueError("Q1 requires state_out and no checkpoint_states")
     else:
-        if not isinstance(checkpoint_states, torch.Tensor) or state_out is not None:
+        if not isinstance(checkpoint_states, torch.Tensor) or (
+            state_out is not None and num_accepted_tokens is None
+        ):
             raise ValueError("Q8 requires checkpoint_states and state_out=None")
-        if (checkpoint_states.shape != (b, 8, h, 128, 128)
-                or checkpoint_states.dtype != state_dtype
-                or checkpoint_states.device != q.device
-                or not checkpoint_states.is_contiguous()):
-            raise ValueError("Q8 checkpoints must be contiguous [B,8,H,128,128] with matching device/state_dtype")
+        if (
+            checkpoint_states.shape != (b, 8, h, 128, 128)
+            or checkpoint_states.dtype != state_dtype
+            or checkpoint_states.device != q.device
+            or not checkpoint_states.is_contiguous()
+        ):
+            raise ValueError(
+                "Q8 checkpoints must be contiguous [B,8,H,128,128] with matching device/state_dtype"
+            )
     args = (q, k, v, g, beta, A_log, dt_bias, state_in, out)
-    options = dict(scale=scale, eps=eps, lower_bound=lower_bound)
+    options = dict(
+        scale=scale, eps=eps, lower_bound=lower_bound, state_indices=state_indices
+    )
     if state_dtype == torch.float32:
         from ._fp32_state.api import prepare_fp32_decode
+
         backend = prepare_fp32_decode(
-            *args, state_out, checkpoint_states=checkpoint_states, **options,
+            *args,
+            state_out if length == 1 else None,
+            checkpoint_states=checkpoint_states,
+            **options,
         )
         workspace_bytes = backend.workspace_bytes
     else:
         from ._bf16_state.api import prepare_bf16_decode
+
         backend = prepare_bf16_decode(
-            *args, state_out, checkpoint_states=checkpoint_states,
-            workspace_limit_bytes=workspace_limit_bytes, **options,
+            *args,
+            state_out if length == 1 else None,
+            checkpoint_states=checkpoint_states,
+            workspace_limit_bytes=workspace_limit_bytes,
+            **options,
         )
         workspace_bytes = backend.workspace_bytes
     terminal = checkpoint_states[:, -1] if length == 8 else state_out
-    return DecodePlan(backend, out, terminal, checkpoint_states, state_dtype, workspace_bytes)
+    commit_call = None
+    if num_accepted_tokens is not None:
+        if length != 8:
+            raise ValueError("num_accepted_tokens requires Q8")
+        commit_call = _prepare_commit(
+            q,
+            state_in,
+            state_out,
+            checkpoint_states,
+            state_indices,
+            num_accepted_tokens,
+            state_dtype,
+            (q, k, v, g, beta, A_log, dt_bias, out),
+        )
+    return DecodePlan(
+        backend,
+        out,
+        terminal,
+        checkpoint_states,
+        state_dtype,
+        workspace_bytes,
+        state_out if commit_call is not None else None,
+        commit_call,
+    )
+
+
+def _prepare_commit(
+    q, initial, destination, checkpoints, indices, accepted, dtype, buffers
+):
+    from ._validation import _range
+
+    if not isinstance(destination, torch.Tensor):
+        raise ValueError("Q8 commit requires state_out")
+    if (
+        destination.shape != initial.shape
+        or destination.dtype != dtype
+        or destination.device != q.device
+        or not destination.is_contiguous()
+        or (destination.numel() and destination.data_ptr() % 32)
+    ):
+        raise ValueError(
+            "state_out must match the state_in pool shape, device and dtype, contiguous and aligned"
+        )
+    if (
+        not isinstance(accepted, torch.Tensor)
+        or accepted.shape != (q.shape[0],)
+        or accepted.dtype != torch.int32
+        or accepted.device != q.device
+        or not accepted.is_contiguous()
+        or (accepted.numel() and accepted.data_ptr() % 32)
+    ):
+        raise ValueError(
+            "num_accepted_tokens must be contiguous aligned device Int32 [B], values 0..8"
+        )
+    if destination.requires_grad and torch.is_grad_enabled():
+        raise RuntimeError("state_out requires no_grad")
+    values = [initial, checkpoints, destination, accepted, *buffers]
+    if indices is not None:
+        values.append(indices)
+    for i, tensor in enumerate(values):
+        lo, hi = _range(tensor)
+        for j in range(i + 1, len(values)):
+            ulo, uhi = _range(values[j])
+            if max(lo, ulo) < min(hi, uhi):
+                if (i, j) == (0, 2) and (lo, hi) == (ulo, uhi):
+                    continue
+                raise ValueError(
+                    "overlapping commit buffers are forbidden except identical state_in/state_out"
+                )
+    kernel = None
+    if q.shape[0]:
+        from ._checkpoint import compiled_commit
+
+        with torch.cuda.device(q.device):
+            kernel = compiled_commit(
+                q.device.index,
+                torch.cuda.get_device_capability(q.device),
+                dtype == torch.float32,
+                indices is not None,
+                initial.data_ptr() == destination.data_ptr(),
+            )
+    return kernel, (initial, checkpoints, destination, accepted, indices)

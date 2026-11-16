@@ -1,0 +1,21 @@
+{
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "torch": "2.14.0a0+b2c75dd062.nv26.09",
+  "cuda": "13.4",
+  "cute_dsl": "4.8.1",
+  "gpus": [
+    "NVIDIA B200",
+    "NVIDIA B200"
+  ],
+  "snapshot_digest": "9d67131fe413f59da3ae872a1ac790cf0ba08e0d484941df5b3e49c10fd417d0",
+  "driver": "615.71.10",
+  "visible_gpus": 2,
+  "nvlink": "NV18",
+  "measured_gpu": 0,
+  "clock_policy": "default; no clock lock",
+  "graph_calls": 1,
+  "replays_per_sample": 3,
+  "warmup_samples": 3,
+  "retained_samples": 9,
+  "cache": "fixed-address hot cache"
+}

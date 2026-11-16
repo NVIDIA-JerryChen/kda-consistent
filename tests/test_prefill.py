@@ -35,7 +35,6 @@ def test_arbitrary_splits(dtype, h):
     bits(state, terminal)
 
 
-
 @pytest.mark.parametrize("lengths", [[], [0], [0, 0, 0], [0, 1, 8, 129]])
 def test_empty_padding_and_inplace(dtype, lengths):
     x = case(lengths, dtype, padding=13)
@@ -46,7 +45,6 @@ def test_empty_padding_and_inplace(dtype, lengths):
     prepare_prefill(state_dtype=dtype, **y, out=oo, state_out=y["state_in"]).run()
     bits(oo, out)
     bits(y["state_in"], terminal)
-
 
 
 @pytest.mark.parametrize("h", [1, 3, 6, 12, 16, 32])
@@ -60,6 +58,26 @@ def test_varlen_batch_reorder(dtype, h):
     for order in ([8, 0, 3, 1], list(reversed(range(len(lengths)))), [4]):
         y, _ = select(x, lengths, [(0, n) for n in lengths], order=order)
         out, final, _ = prefill(y)
-        bits(out, torch.cat([expected[:, offsets[i]:offsets[i+1]] for i in order], 1))
+        bits(
+            out, torch.cat([expected[:, offsets[i] : offsets[i + 1]] for i in order], 1)
+        )
         bits(final, state[order])
 
+
+@pytest.mark.parametrize(
+    "b,h", [(12, 11), (12, 12), (12, 13), (8, 16), (5, 32), (4, 48)]
+)
+def test_prefill_batch_vs_individual_requests(dtype, b, h):
+    """Changing the batch must preserve all states across head counts."""
+    lengths = [257 + 31 * (i % 3) for i in range(b)]
+    lengths[-1] = 0
+    x = case(lengths, dtype, h)
+    expected, terminal, _ = prefill(x)
+    outputs, states = [], []
+    for i in range(b):
+        one, _ = select(x, lengths, [(0, n) for n in lengths], order=[i])
+        out, state, _ = prefill(one)
+        outputs.append(out)
+        states.append(state)
+    bits(torch.cat(outputs, 1), expected)
+    bits(torch.cat(states, 0), terminal)

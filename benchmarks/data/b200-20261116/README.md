@@ -10,17 +10,20 @@ The 154-test suite passed with no skips, including two-GPU full-head sharding.
 Benchmark checks cover finite outputs, complete effective continuation state,
 Graph replay, CF mixed/row agreement and every Q8 checkpoint against prefix execution.
 
+This historical run excludes accepted-state selection. See the
+[current B200/B300 measurements](../k3-runtime-20261116/README.md) for the updated API.
+
 ## Implementations
 
-- Current public `kda_consistent` APIs, BF16 and FP32 state contracts. Exact Python
+- Frozen public `kda_consistent` API snapshot, BF16 and FP32 state contracts. Exact Python
   file hashes are in [package-sources.json](package-sources.json); the aggregate
   hash and frozen experiment digest are in [summary.json](summary.json).
-- FlashInfer `c3af0c13328fd23b256c53b9b4f94d9e160d118c`: Q1 single-token and
+- [FlashInfer](https://github.com/flashinfer-ai/flashinfer) [c3af0c13328fd23b256c53b9b4f94d9e160d118c](https://github.com/flashinfer-ai/flashinfer/commit/c3af0c13328fd23b256c53b9b4f94d9e160d118c): Q1 single-token and
   native Q8 grouped checkpoint paths, BF16 state/checkpoint storage.
-- FlashKDA `d7e3b3a9f448500630fa60fb5200f4f9c9b1fc72`, CUTLASS
-  `5c149f52a436782210263fb2f19b354443a61c6a`: original packed forward, BF16 state.
-- Inferact/zero-mismatch-rl `vllm/kimi-k3.1`,
-  `5735778f43f7d94108d432706dc5b17765bf723a`: CF-BI C16/v6 and C64/v5.
+- [FlashKDA](https://github.com/MoonshotAI/FlashKDA) [d7e3b3a9f448500630fa60fb5200f4f9c9b1fc72](https://github.com/MoonshotAI/FlashKDA/commit/d7e3b3a9f448500630fa60fb5200f4f9c9b1fc72), CUTLASS
+  [5c149f52a436782210263fb2f19b354443a61c6a](https://github.com/NVIDIA/cutlass/commit/5c149f52a436782210263fb2f19b354443a61c6a): original packed forward, BF16 state.
+- [Inferact/zero-mismatch-rl](https://github.com/Inferact/zero-mismatch-rl) `vllm/kimi-k3.1`,
+  [5735778f43f7d94108d432706dc5b17765bf723a](https://github.com/Inferact/zero-mismatch-rl/commit/5735778f43f7d94108d432706dc5b17765bf723a): CF-BI C16/v6 and C64/v5.
   Original CUDA kernels are unchanged, compiled for `sm_100a`.
 
 ## Inputs and timing
