@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kda-consistent"
+version = "0.1.0"
+description = "Consistent KDA forward kernels with BF16 or FP32 continuation state"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT AND Apache-2.0"
+license-files = ["LICENSE", "licenses/*.txt"]
+dependencies = [
+  "torch>=2.12",
+  "nvidia-cutlass-dsl==4.8.1",
+  "nvidia-cutlass-dsl-libs-base==4.8.1",
+  "nvidia-cutlass-dsl-libs-core==4.8.1",
+  "nvidia-cutlass-dsl-libs-cu13==4.8.1",
+  "apache-tvm-ffi==0.1.10",
+  "cuda-python>=12.8",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "triton>=3.0"]
+
+[project.urls]
+Repository = "https://github.com/NVIDIA-JerryChen/kda-consistent"
+
+[tool.setuptools.packages.find]
+include = ["kda_consistent*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,274 @@
+{
+  "repository": "https://github.com/NVIDIA-JerryChen/FlashKDA",
+  "bf16_commit": "364a0e515dd9e0247bfef168159933df5589d9e7",
+  "fp32_commit": "c170b72824f5dd1a7df0ec09a1674ea3e97c79bf",
+  "files": [
+    {
+      "source": "flash_kda/_consistent_decode_kernel.py",
+      "destination": "kda_consistent/_bf16_state/decode_q1.py",
+      "source_sha256": "37f0986af7c475fe6980f050016cd01f804c3ef5d2e4bb60904f4b2bde029d79",
+      "extracted_sha256": "37f0986af7c475fe6980f050016cd01f804c3ef5d2e4bb60904f4b2bde029d79",
+      "additional_destinations": [
+        "kda_consistent/_bf16_state/math.py"
+      ]
+    },
+    {
+      "source": "flash_kda/_consistent_prefill_math.py",
+      "destination": "kda_consistent/_bf16_state/math.py",
+      "source_sha256": "7d7e8fb19cc2c8195745d7a87928b3f668aae8ecae9135a6541a045891d340f9",
+      "extracted_sha256": "7d7e8fb19cc2c8195745d7a87928b3f668aae8ecae9135a6541a045891d340f9"
+    },
+    {
+      "source": "flash_kda/_consistent_prefill_staged.py",
+      "destination": "kda_consistent/_bf16_state/decode_q8.py",
+      "source_sha256": "e78c9e0a0b2c2addd4fcad0957c56fa9dc506082a4651d78ed4e676bd6d52a22",
+      "extracted_sha256": "e78c9e0a0b2c2addd4fcad0957c56fa9dc506082a4651d78ed4e676bd6d52a22"
+    },
+    {
+      "source": "flash_kda/consistent_decode.py",
+      "destination": "kda_consistent/_bf16_state/api.py",
+      "source_sha256": "4b441b4304fdb1abe06c8714c791cf6293561ed79b436f223778b4664efd3aaf",
+      "extracted_sha256": "4b441b4304fdb1abe06c8714c791cf6293561ed79b436f223778b4664efd3aaf"
+    },
+    {
+      "source": "flash_kda/consistent_prefill.py",
+      "destination": "kda_consistent/_bf16_state/api.py",
+      "source_sha256": "0ae5b93395ae29989f608c932e5bbb376dfd6aae07cf8d8f57b710d9aab67725",
+      "extracted_sha256": "0ae5b93395ae29989f608c932e5bbb376dfd6aae07cf8d8f57b710d9aab67725"
+    },
+    {
+      "source": "flash_kda/unified_prefill.py",
+      "destination": "kda_consistent/_bf16_state/api.py",
+      "source_sha256": "96f8ae311a05d62e104bb106f31b4c2fed9550c10cc8a9b3b06efde346ea2dbc",
+      "extracted_sha256": "96f8ae311a05d62e104bb106f31b4c2fed9550c10cc8a9b3b06efde346ea2dbc"
+    },
+    {
+      "source": "flash_kda/fp32.py",
+      "destination": "kda_consistent/_fp32_state/api.py",
+      "source_sha256": "f7ca956e7355745147ac49091c0f55822066fb3b61cb07b69f74d1a5a5ac9fa0",
+      "extracted_sha256": "052a7ce8dbc0372b3602c935becbf2702f43d2be647338537d87dc3d4a806185"
+    },
+    {
+      "source": "flash_kda/_prefill_window/__init__.py",
+      "destination": "kda_consistent/_bf16_state/prefill/__init__.py",
+      "source_sha256": "c745660e21017d2f33f708cf097cdbefcf362759636e0f5eacad9c6cdc500d4d",
+      "extracted_sha256": "c745660e21017d2f33f708cf097cdbefcf362759636e0f5eacad9c6cdc500d4d"
+    },
+    {
+      "source": "flash_kda/_prefill_window/aligned_induction_coeff.py",
+      "destination": "kda_consistent/_bf16_state/prefill/coefficients.py",
+      "source_sha256": "914a0df3c28ccd9e4b7c4849706e2483c46ab826131e30e98ba6fceb3a9aba3d",
+      "extracted_sha256": "914a0df3c28ccd9e4b7c4849706e2483c46ab826131e30e98ba6fceb3a9aba3d"
+    },
+    {
+      "source": "flash_kda/_prefill_window/consumer.py",
+      "destination": "kda_consistent/_bf16_state/prefill/consumer.py",
+      "source_sha256": "e38088803e312eb17bfc0654cc1d1197e2a55c6e4a50a4eb5c4a655820347452",
+      "extracted_sha256": "e38088803e312eb17bfc0654cc1d1197e2a55c6e4a50a4eb5c4a655820347452"
+    },
+    {
+      "source": "flash_kda/_prefill_window/halving2_consumer.py",
+      "destination": "kda_consistent/_bf16_state/prefill/halving2_consumer.py",
+      "source_sha256": "f7c88194e6b120762e5f21cbda2b7bfb3f60dc9e1addc42441960160fc5d0332",
+      "extracted_sha256": "f7c88194e6b120762e5f21cbda2b7bfb3f60dc9e1addc42441960160fc5d0332"
+    },
+    {
+      "source": "flash_kda/_prefill_window/halving_consumer.py",
+      "destination": "kda_consistent/_bf16_state/prefill/halving_consumer.py",
+      "source_sha256": "4191691de2eaff6f5276638a907c6d051b098d927fbe677f8fa802240259f030",
+      "extracted_sha256": "4191691de2eaff6f5276638a907c6d051b098d927fbe677f8fa802240259f030"
+    },
+    {
+      "source": "flash_kda/_prefill_window/packed_math.py",
+      "destination": "kda_consistent/_primitives.py",
+      "source_sha256": "6a3f8d97e88d8f94b54a25172c3034abf70e6bb3c060cf1a51ff29e8fa736720",
+      "extracted_sha256": "6a3f8d97e88d8f94b54a25172c3034abf70e6bb3c060cf1a51ff29e8fa736720"
+    },
+    {
+      "source": "flash_kda/_prefill_window/plan.py",
+      "destination": "kda_consistent/_bf16_state/prefill/plan.py",
+      "source_sha256": "6b8db29218754200ebd35f05a83d841f61d0dae805b663bb299ec2ff4473771c",
+      "extracted_sha256": "6b8db29218754200ebd35f05a83d841f61d0dae805b663bb299ec2ff4473771c"
+    },
+    {
+      "source": "flash_kda/_prefill_window/policy.py",
+      "destination": "kda_consistent/_bf16_state/prefill/policy.py",
+      "source_sha256": "33b62949d02139410988b2f251d1a236431a772b5762654db41f422c32e4b7ef",
+      "extracted_sha256": "33b62949d02139410988b2f251d1a236431a772b5762654db41f422c32e4b7ef"
+    },
+    {
+      "source": "flash_kda/_prefill_window/schedule.py",
+      "destination": "kda_consistent/_bf16_state/prefill/schedule.py",
+      "source_sha256": "fd428d81e70e55027487fce934bd079b94192e73f6ab83d754de70d0dc626adf",
+      "extracted_sha256": "fd428d81e70e55027487fce934bd079b94192e73f6ab83d754de70d0dc626adf"
+    },
+    {
+      "source": "flash_kda/_prefill_window/shared_stage_scan.py",
+      "destination": "kda_consistent/_bf16_state/prefill/scan.py",
+      "source_sha256": "ed21d062d199bb227436a21ddc4fdb8eb3bf8d3de0730c3875c8f35996dd6e9e",
+      "extracted_sha256": "ed21d062d199bb227436a21ddc4fdb8eb3bf8d3de0730c3875c8f35996dd6e9e"
+    },
+    {
+      "source": "flash_kda/_prefill_window/state_bits.py",
+      "destination": "kda_consistent/_bf16_state/state_io.py",
+      "source_sha256": "c831b0b9e0a1e0244bb80c243af5e21cc9fad1faeee6408b2c3af683bcd0e375",
+      "extracted_sha256": "c831b0b9e0a1e0244bb80c243af5e21cc9fad1faeee6408b2c3af683bcd0e375"
+    },
+    {
+      "source": "flash_kda/_fp32/__init__.py",
+      "destination": "kda_consistent/_fp32_state/__init__.py",
+      "source_sha256": "b99413666583a01ae0bbe675c6f0c930cd7e34188a1b95fe7bc7a57965859eb3",
+      "extracted_sha256": "b99413666583a01ae0bbe675c6f0c930cd7e34188a1b95fe7bc7a57965859eb3"
+    },
+    {
+      "source": "flash_kda/_fp32/state_io.py",
+      "destination": "kda_consistent/_fp32_state/state_io.py",
+      "source_sha256": "de228d4e1fbb39dbbb150a379bd18577de87f5dad9269997291611c14ecbae17",
+      "extracted_sha256": "de228d4e1fbb39dbbb150a379bd18577de87f5dad9269997291611c14ecbae17"
+    },
+    {
+      "source": "flash_kda/_fp32/gate.py",
+      "destination": "kda_consistent/_fp32_state/math.py",
+      "source_sha256": "e3ea2df6a1751493ed0eaee643afa90679a4333b1d08dcdfebc08ca77064f7f6",
+      "extracted_sha256": "e3ea2df6a1751493ed0eaee643afa90679a4333b1d08dcdfebc08ca77064f7f6"
+    },
+    {
+      "source": "flash_kda/_fp32/decode_q8.py",
+      "destination": "kda_consistent/_fp32_state/decode_q8.py",
+      "source_sha256": "ebd271bf2c6fef0de159cf3023df8aa26ee768fcce741426ca116ceb034e5c31",
+      "extracted_sha256": "ebd271bf2c6fef0de159cf3023df8aa26ee768fcce741426ca116ceb034e5c31"
+    },
+    {
+      "source": "flash_kda/_fp32/decode.py",
+      "destination": "kda_consistent/_fp32_state/decode_q1.py",
+      "source_sha256": "f38445774ddc599182c264b6f3708fbe052b73e03cf268980d3a981f02c17d2f",
+      "extracted_sha256": "f38445774ddc599182c264b6f3708fbe052b73e03cf268980d3a981f02c17d2f",
+      "additional_destinations": [
+        "kda_consistent/_fp32_state/math.py"
+      ]
+    },
+    {
+      "source": "flash_kda/_fp32/window/__init__.py",
+      "destination": "kda_consistent/_fp32_state/prefill/__init__.py",
+      "source_sha256": "c745660e21017d2f33f708cf097cdbefcf362759636e0f5eacad9c6cdc500d4d",
+      "extracted_sha256": "c745660e21017d2f33f708cf097cdbefcf362759636e0f5eacad9c6cdc500d4d"
+    },
+    {
+      "source": "flash_kda/_fp32/window/aligned_induction_coeff.py",
+      "destination": "kda_consistent/_fp32_state/prefill/coefficients.py",
+      "source_sha256": "b3d81dd73c25a399c9d9d5c2b46e026a7a89e8636bc9362f74817892ae88f708",
+      "extracted_sha256": "b3d81dd73c25a399c9d9d5c2b46e026a7a89e8636bc9362f74817892ae88f708"
+    },
+    {
+      "source": "flash_kda/_fp32/window/consumer.py",
+      "destination": "kda_consistent/_fp32_state/prefill/consumer.py",
+      "source_sha256": "66566bb8817f50ad07120912052e7bf78b7e198c45a4fbf778a867bd8a0539c0",
+      "extracted_sha256": "66566bb8817f50ad07120912052e7bf78b7e198c45a4fbf778a867bd8a0539c0"
+    },
+    {
+      "source": "flash_kda/_fp32/window/halving2_consumer.py",
+      "destination": "kda_consistent/_fp32_state/prefill/halving2_consumer.py",
+      "source_sha256": "02e3da884c2da8078741e50788c2805a8e769d5d02c5da7671b6c97f282e05c3",
+      "extracted_sha256": "02e3da884c2da8078741e50788c2805a8e769d5d02c5da7671b6c97f282e05c3"
+    },
+    {
+      "source": "flash_kda/_fp32/window/halving_consumer.py",
+      "destination": "kda_consistent/_fp32_state/prefill/halving_consumer.py",
+      "source_sha256": "0c48dff9d802be96881b62b54e134a09ed65517a3ba98c3d8ff1d169407b1353",
+      "extracted_sha256": "0c48dff9d802be96881b62b54e134a09ed65517a3ba98c3d8ff1d169407b1353"
+    },
+    {
+      "source": "flash_kda/_fp32/window/kpack_consumer.py",
+      "destination": "kda_consistent/_fp32_state/prefill/kpack_consumer.py",
+      "source_sha256": "c4c02caa01661ae97e6cc8f53917a6c729ff3949e906603ebb9f34fcc73f410d",
+      "extracted_sha256": "c4c02caa01661ae97e6cc8f53917a6c729ff3949e906603ebb9f34fcc73f410d"
+    },
+    {
+      "source": "flash_kda/_fp32/window/octa_consumer.py",
+      "destination": "kda_consistent/_fp32_state/prefill/octa_consumer.py",
+      "source_sha256": "d9bfafd306aa4145f824938418f6fca761e970e44ea853ec514938d2b14d2a6d",
+      "extracted_sha256": "d9bfafd306aa4145f824938418f6fca761e970e44ea853ec514938d2b14d2a6d"
+    },
+    {
+      "source": "flash_kda/_fp32/window/packed_math.py",
+      "destination": "kda_consistent/_primitives.py",
+      "source_sha256": "510ae9ca444133c65df82dec923e9fa3519e06ecb3e2d86da45089d644eb6b22",
+      "extracted_sha256": "510ae9ca444133c65df82dec923e9fa3519e06ecb3e2d86da45089d644eb6b22"
+    },
+    {
+      "source": "flash_kda/_fp32/window/pair_consumer.py",
+      "destination": "kda_consistent/_fp32_state/prefill/pair_consumer.py",
+      "source_sha256": "cd96cd3d01d2db605049012d7f0fb3a493885fc00b5a7e3d263c61afcbd4ded7",
+      "extracted_sha256": "cd96cd3d01d2db605049012d7f0fb3a493885fc00b5a7e3d263c61afcbd4ded7",
+      "additional_destinations": [
+        "kda_consistent/_fp32_state/state_io.py"
+      ]
+    },
+    {
+      "source": "flash_kda/_fp32/window/policy.py",
+      "destination": "kda_consistent/_fp32_state/prefill/policy.py",
+      "source_sha256": "466197c49227e135fcf98e45b233ad1b3211d5ce2b4abee2b9bdc3343c46b2e2",
+      "extracted_sha256": "466197c49227e135fcf98e45b233ad1b3211d5ce2b4abee2b9bdc3343c46b2e2"
+    },
+    {
+      "source": "flash_kda/_fp32/window/schedule.py",
+      "destination": "kda_consistent/_fp32_state/prefill/schedule.py",
+      "source_sha256": "5b98b9d91e3bba5539fcfde51e0d6d402cf6e447a42bc5aaf52b065ef54669e0",
+      "extracted_sha256": "5b98b9d91e3bba5539fcfde51e0d6d402cf6e447a42bc5aaf52b065ef54669e0"
+    },
+    {
+      "source": "flash_kda/_fp32/window/shared_stage_scan.py",
+      "destination": "kda_consistent/_fp32_state/prefill/scan.py",
+      "source_sha256": "8e2174e9875ec9980567da8723edce46c6c701414784f4cb89621be93399aacc",
+      "extracted_sha256": "8e2174e9875ec9980567da8723edce46c6c701414784f4cb89621be93399aacc"
+    },
+    {
+      "source": "flash_kda/_fp32/window/alignment.py",
+      "destination": "kda_consistent/_primitives.py",
+      "source_sha256": "06ff9f66d30baf77a505a007629846464e294c9beeb50620bd6195092b92df66",
+      "extracted_sha256": "06ff9f66d30baf77a505a007629846464e294c9beeb50620bd6195092b92df66"
+    },
+    {
+      "source": "flash_kda/_fp32/window/plan.py",
+      "destination": "kda_consistent/_fp32_state/prefill/plan.py",
+      "source_sha256": "6bd8089f183e8f79a836f6ddb3f67d22e16666967e4d415704fe31de0e5b9954",
+      "extracted_sha256": "6bd8089f183e8f79a836f6ddb3f67d22e16666967e4d415704fe31de0e5b9954"
+    },
+    {
+      "source": "LICENSE",
+      "destination": "LICENSE",
+      "source_sha256": "05f1750624d6ab5f6dd59dea79e3156f4fec6b3065c94aeeaf265df677f9e6e8",
+      "extracted_sha256": "05f1750624d6ab5f6dd59dea79e3156f4fec6b3065c94aeeaf265df677f9e6e8"
+    },
+    {
+      "source": "licenses/FlashInfer-NOTICE.txt",
+      "destination": "licenses/FlashInfer-NOTICE.txt",
+      "source_sha256": "eb09459950f2dfef4e4604c00ab31162bbef527fb6190fa9bb72ac494b45b53d",
+      "extracted_sha256": "eb09459950f2dfef4e4604c00ab31162bbef527fb6190fa9bb72ac494b45b53d"
+    },
+    {
+      "source": "licenses/FlashInfer-Apache-2.0.txt",
+      "destination": "licenses/FlashInfer-Apache-2.0.txt",
+      "source_sha256": "cb67c224f503e0a063908950b12f89a7280c6e527dcffac972aa114e4bf3c5de",
+      "extracted_sha256": "cb67c224f503e0a063908950b12f89a7280c6e527dcffac972aa114e4bf3c5de"
+    },
+    {
+      "source": "tests/consistency/helpers.py",
+      "destination": "tests/helpers.py",
+      "source_sha256": "7ada629c3b2ce5461910b0c1a04f4e04f7da94a8be6633e3df39dd4d895661e8",
+      "extracted_sha256": "67f4f3e45c163d9f5f1a3477f51c98541bc08290d12c3a8937ae2864adae3ab3"
+    },
+    {
+      "source": "tests/consistency/test_fp32.py",
+      "destination": "tests/test_consistency.py",
+      "source_sha256": "97801fdfe15a08865cf6ab0ab55c43112d9a9c3b31805e6ebd470b9394787075",
+      "extracted_sha256": "928c4c053a91559c6b83bd74cf6b4c38072c6f7e8e678ef98a3cefc6cfb620b2"
+    },
+    {
+      "source": "tests/consistency/fp32_math_reference.py",
+      "destination": "tests/fp64_reference.py",
+      "source_sha256": "1b7876de4aa701a5bb5c60cd1d6b593e6c2400f2eb6a5c37e3692f524248009d",
+      "extracted_sha256": "1b7876de4aa701a5bb5c60cd1d6b593e6c2400f2eb6a5c37e3692f524248009d"
+    }
+  ]
+}
